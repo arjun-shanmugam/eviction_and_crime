@@ -1,1 +1,2 @@
 python3 -m evictions_and_crime.scripts.paper_2025_12_25.clean_evictions
+python3 -m eviction_and_crime.scripts.clean_census_tract_covariates
