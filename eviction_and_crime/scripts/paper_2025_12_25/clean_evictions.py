@@ -2,7 +2,8 @@
 Clean raw evictions data
 """
 
-from eviction_and_crime.constants import INTERMEDIATE_EVICTIONS_DATA, RAW_EVICTIONS_DATA
+from eviction_and_crime.constants import CLEAN_EVICTIONS, RAW_EVICTIONS
+
 import polars as pl
 
 schema_overrides = {
@@ -11,7 +12,7 @@ schema_overrides = {
     "judgment": pl.String,
 }
 evictions_df = pl.read_csv(
-    RAW_EVICTIONS_DATA, schema_overrides=schema_overrides, encoding="unicode_escape"
+    RAW_EVICTIONS, schema_overrides=schema_overrides, encoding="unicode_escape"
 )
 
 
@@ -33,7 +34,9 @@ court_division_replacement_dict = {
     "western": "Western",
 }
 evictions_df = evictions_df.with_columns(
-    pl.col("court_division").replace(court_division_replacement_dict)
+    pl.col("court_division")
+    .replace(court_division_replacement_dict)
+    .str.replace("_", " ", literal=True)
 )
 
 # Clean initiating action column
@@ -56,22 +59,27 @@ initiating_action_replacement_dict = {
     "P Summons and Complaint - Cause": "SP Summons and Complaint - Cause",
     "Summary Process - Residential (c239)": "SP Summons and Complaint - Cause",
     "SP Transfer- No Cause": "SP Summons and Complaint - No Cause",
+    "Tenant Illegal Activity - Declaratory Judgment c.139 s. 19": "SP Summons and Complaint - Cause",
+    "Public Housing Tenant Illegal Activity Declaratory Judgment (c139 &#167;19)": "SP Summons and Complaint - Cause",
+    "Public Housing Tenant Illegal Activity Declaratory Judgment (c139 §19)": "SP Summons and Complaint - Cause",
+    "Public Housing Tenant Illegal Activity Declaratory Judgment (c139 Â§19)": "SP Summons and Complaint - Cause",
 }
 # TODO: Finish cleaning up initiating action column
-# "Tenant Illegal Activity - Declaratory Judgment c.139 s. 19"
-# "Public Housing Tenant Illegal Activity Declaratory Judgment (c139 &#167;19)"
-# Public Housing Tenant Illegal Activity Declaratory Judgment (c139 §19)
-# Supplementary Process (c224 &#167;&#167; 14-21)
-# Replevin (c247)
-# Lien Enforcement Action (c254 &#167;5;255 &#167;26)
-# Barnes, Esq., Vesper Gibbs
-# Consumer Revolving Credit - M.R.C.P Rule 8.1
-# Money Action - District Court Filing (c231 &#167;&#167; 103-104)
-# Money Action - District Court Filing (c231 §§ 103-104)
-# Case transferred from another court or has prior manual docket - no fee due
-
+initating_actions_to_exclude = [
+    "Supplementary Process (c224 &#167;&#167; 14-21)",
+    "Replevin (c247)",
+    "Lien Enforcement Action (c254 &#167;5;255 &#167;26)",
+    "Barnes, Esq., Vesper Gibbs",
+    "Consumer Revolving Credit - M.R.C.P Rule 8.1",
+    "Money Action - District Court Filing (c231 &#167;&#167; 103-104)",
+    "Money Action - District Court Filing (c231 §§ 103-104)",
+    "Case transferred from another court or has prior manual docket - no fee due",
+]
 evictions_df = evictions_df.with_columns(
     pl.col("initiating_action").replace(initiating_action_replacement_dict)
+)
+evictions_df = evictions_df.filter(
+    ~pl.col("initiating_action").is_in(initating_actions_to_exclude)
 )
 
 evictions_df = evictions_df.with_columns(
@@ -113,7 +121,46 @@ evictions_df = evictions_df.with_columns(
 # Drop missing addresses
 evictions_df = evictions_df.filter(pl.col("property_address_full").is_not_null())
 
+
+# Add file month and year to dataset.
+date_format = "%m/%d/%Y"
+evictions_df = evictions_df.with_columns(
+    pl.col("file_date")
+    .str.strptime(pl.Date, date_format, strict=True)
+    .dt.strftime("%Y-%m")
+    .alias("file_month"),
+    pl.col("file_date")
+    .str.strptime(pl.Date, date_format, strict=True)
+    .dt.year()
+    .alias("file_year"),
+    pl.col("latest_docket_date")
+    .str.strptime(pl.Date, date_format, strict=True)
+    .dt.strftime("%Y-%m")
+    .alias("latest_docket_month"),
+    pl.col("latest_docket_date")
+    .str.strptime(pl.Date, date_format, strict=True)
+    .dt.year()
+    .alias("latest_docket_year"),
+)
+
+
+# Clean the values in the judgment_for_pdu variable.
+judgment_for_pdu_replacement_dict = {
+    "unknown": "Unknown",
+    "plaintiff": "Plaintiff",
+    "defendant": "Defendant",
+}
+evictions_df = evictions_df.with_columns(
+    pl.col("judgment_for_pdu")
+    .replace(judgment_for_pdu_replacement_dict)
+    .alias("judgment_for_pdu")
+)
+
+# Replace missing values in money judgment column with zeroes.
+evictions_df = evictions_df.with_columns(
+    pl.col("judgment").fill_null(0).alias("judgment")
+)
+
 # After this point, ran through geocodio to get 2010 census tract and
 # rooftop lat long for each property
-
-evictions_df.write_csv(INTERMEDIATE_EVICTIONS_DATA)
+evictions_df.write_csv(CLEAN_EVICTIONS)

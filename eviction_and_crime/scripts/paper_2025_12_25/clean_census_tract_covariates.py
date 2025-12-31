@@ -42,4 +42,4 @@ columns_to_keep = [
     "rent_twobed2015",
     "czname",
 ]
-tracts_df.select(pl.col(columns_to_keep)).write_csv(CLEAN_CENSUS_TRACT_COVARIATES)
+tracts_df.select(pl.col(columns_to_keep)).write_parquet(CLEAN_CENSUS_TRACT_COVARIATES)
