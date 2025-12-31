@@ -92,3 +92,5 @@ target/
 # Csv and parquet data files
 **/*.csv
 **/*.parquet
+data/
+output/
